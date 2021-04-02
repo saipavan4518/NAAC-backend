@@ -324,7 +324,6 @@ def get_json_unique_exceptions(cpykey, audit_1id, audit_2id):
     print(result1)
     print(result2)
     all_data = [{"name": "Unique Exceptions", audit_1id: len(result1), audit_2id: len(result2)}]
-    percentage = int(((len(result1)-len(result2))/(len(result1)+len(result2)))*100)
 
     percent = find_percent(len(result1), len(result2))
 
@@ -396,16 +395,19 @@ def get_json_np(cpykey, audit_1id, audit_2id):
 
     list1 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_1id})
     list2 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_2id})
-    print(len(list1))
-    pprint.pprint(list1)
-    pprint.pprint(list2)
-    print(len(list2))
-    result_set = set(list1) - set(list2)
-    result_list = [i for i in result_set]
-    if len(result_set) == 0:
-        return {"method": False}
-    else:
-        return {"method": True, "length": len(result_list), "result": result_list}
+    result_set_1 = set(list1) - set(list2)
+    result_set_2 = set(list2) - set(list1)
+    result_list_1 = [i for i in result_set_1]
+    result_list_2 = [i for i in result_set_2]
+    method_1 = True
+    method_2 = True
+    if len(result_set_1) == 0:
+        method_1 = False
+    if len(result_set_2) == 0:
+        method_2 = False
+
+    return {"a1": {"method": method_1, "length": len(result_list_1), "result": result_list_1},
+            "a2": {"method": method_2, "length": len(result_list_2), "result": result_list_2}}
 
 
 @app.route("/api/audit/get/table/np", methods=["GET"])
@@ -421,64 +423,6 @@ def np():
 
         return response, 200
 
-
-def get_json_np2(cpykey, audit_1id, audit_2id):
-    """
-        ne: not present
-        it returns the exceptions that are present in the new audit, but "not present" in the old audit
-        if length == 0: it returns false, or else it returns true with the list
-        :return:
-    """
-    db = db_connect()
-
-    list1 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_1id})
-    list2 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_2id})
-    print(len(list1))
-    pprint.pprint(list1)
-    pprint.pprint(list2)
-    print(len(list2))
-    result_set = set(list2) - set(list1)
-    result_list = [i for i in result_set]
-    if len(result_set) == 0:
-        return {"method": False}
-    else:
-        return {"method": True, "length": len(result_list), "result": result_list}
-
-
-@app.route("/api/audit/get/table/np2", methods=["GET"])
-def np2():
-    if request.method == "GET":
-        cpykey = request.args.get("cpykey")
-        audit_1id = request.args.get("audit_1_id")
-        audit_2id = request.args.get("audit_2_id")
-        result = get_json_np2(cpykey, audit_1id, audit_2id)
-
-        response = make_response({"result": result})
-        response.headers['Access-Control-Allow-Origin'] = '*'
-
-        return response, 200
-
-def ce_getjson(cpykey, audit_1id, audit_2id):
-    db = db_connect() # db connect
-    list1 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_1id, "Severity": "Critical"})
-    list2 =db.get_collection(cpykey).distinct("Exception Name",  {"jsonFor": "allExceptions", "Audit_ID": audit_2id, "Severity": "Critical"})
-    return {"audit_1":list1, "audit_2":list2}
-
-
-@app.route("/api/test/cep", methods=["GET"])
-def ce():
-    if request.method == "GET":
-        cpykey = request.args.get("cpykey")
-        audit_1id = request.args.get("audit_1_id")
-        audit_2id = request.args.get("audit_2_id")
-        result = ce_getjson(cpykey, audit_1id, audit_2id)
-
-        return {"result":result}, 200
-
-
-@app.route("/api/hello", methods=["GET"])
-def hello():
-    return {"message":"hello"}, 200
 
 if __name__ == "__main__":
     app.run(debug=True)
