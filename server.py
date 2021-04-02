@@ -72,14 +72,8 @@ def get_json_overviewexceptions(cpykey, audit_1id, audit_2id):
     a2c = db.get_collection(cpykey).count_documents({"Audit_ID": id_2, "jsonFor": "allExceptions"})
     all_data.append({"name": "TNE", audit_1id: a1c, audit_2id: a2c})
 
-    percentage = int(((a1c - a2c) / (a1c + a2c)) * 100)
-    print(percentage)
-    if percentage > 0:
-        all_data.append({"p": percentage, "diff": "increment"})
-    else:
-        all_data.append({"p": percentage, "diff": "decrement"})
-
-    return all_data
+    percent = find_percent(a1c, a2c)
+    return all_data, percent
 
 
 @app.route("/api/audit/oe", methods=["GET"])
@@ -103,9 +97,9 @@ def getoverview_exceptions():
     if count is None:
         return {"error": "Audit-2 is needed"}, 400
 
-    result = get_json_overviewexceptions(cpykey, audit_1id, audit_2id)
+    result, p = get_json_overviewexceptions(cpykey, audit_1id, audit_2id)
 
-    response = make_response({"result": result})
+    response = make_response({"result": result, "percent":p})
     response.headers['Access-Control-Allow-Origin'] = '*'
 
     return response, 200
