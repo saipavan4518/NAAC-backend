@@ -24,42 +24,6 @@ def db_connect():
     db = dbclient[dbname]
     return db
 
-def check_audit_info(customer_key, audit_id, audit_type):
-    dbName = "CNA_Visualizer"
-    dbClient = pymongo.MongoClient('localhost', 27017)
-    db = dbClient[dbName]
-    query = {"customer_key" : customer_key, "audit_id" : audit_id , "audit_type" : audit_type}
-    res = db['upload_information'].find(query)
-    result = list(res)
-    print("Checking if audit is already available ... ")
-    if len(result) == 0:
-        print("Not found in the DB")
-        return False
-    else:
-        print("Found in DB")
-        return True
-
-
-@app.route("/", methods=['GET'])
-def default_route():
-    if request.method == 'GET':
-        print("sdfkjndsfkj")
-        print(request.args.get("uname"))
-        return {"great": "yes"}
-
-
-@app.route("/api/get/audit", methods=['POST'])
-def getdata():
-    if request.method == 'POST':
-        dbname = "CNA_Visualizer"
-        audit_id = str(request.form['audit_id'])
-        dbclient = pymongo.MongoClient("mongodb://127.0.0.1:27017/?compressors=disabled&gssapiServiceName=mongodb", 27017)
-        db = dbclient[dbname]  # here we are in the CNA visualizer
-        query = {"jsonFor": "allExceptions"}
-        res = db['12345'].find(query)
-        result = list(res)
-
-        return {"result": len(result)}
 
 def get_json_overviewexceptions(cpykey, audit_1id, audit_2id):
     db = db_connect()
@@ -99,7 +63,7 @@ def getoverview_exceptions():
 
     result, p = get_json_overviewexceptions(cpykey, audit_1id, audit_2id)
 
-    response = make_response({"result": result, "percent":p})
+    response = make_response({"result": result, "percent": p})
     response.headers['Access-Control-Allow-Origin'] = '*'
 
     return response, 200
@@ -158,8 +122,8 @@ def find_percent(num1, num2):
     if num1 == 0 and num2 == 0:
         return 0
     p = int(((num1-num2)/(num1+num2))*100)
-    # p > 0 : decrement in exceptions
-    # p < 0 : increment in exceptions
+    # p > 0 : decrement in exceptions green color
+    # p < 0 : increment in exceptions red color
     percent = None
     if p > 0:
         percent = {"p": abs(p), "diff": "decrement"}
@@ -257,7 +221,7 @@ def get_json_fccaps(cpykey, audit_1id, audit_2id):
     all_data.append({"name": "FM", audit_1id: a1c, audit_2id: a2c, "percent": find_percent(a1c, a2c)})
 
     a1c = db.get_collection(cpykey).count_documents(
-        {"Audit_ID": id_1,"jsonFor":"allExceptions", "NMS Area": "Capacity Management"})
+        {"Audit_ID": id_1, "jsonFor":"allExceptions", "NMS Area": "Capacity Management"})
     a2c = db.get_collection(cpykey).count_documents(
         {"Audit_ID": id_2, "jsonFor":"allExceptions", "NMS Area": "Capacity Management"})
     all_data.append({"name": "CM", audit_1id: a1c, audit_2id: a2c, "percent": find_percent(a1c, a2c)})
@@ -281,6 +245,7 @@ def get_json_fccaps(cpykey, audit_1id, audit_2id):
     all_data.append({"name": "SM", audit_1id: a1c, audit_2id: a2c, "percent": find_percent(a1c, a2c)})
 
     return all_data
+
 
 @app.route("/api/audit/fccaps", methods=["GET"])
 def getfccaps():
@@ -319,8 +284,8 @@ def get_json_unique_exceptions(cpykey, audit_1id, audit_2id):
     :return: the unique exceptions in an audit file
     """
     db = db_connect()
-    result1 = db.get_collection(cpykey).distinct("Exception Name", {"Audit_ID": audit_1id})
-    result2 = db.get_collection(cpykey).distinct("Exception Name", {"Audit_ID": audit_2id})
+    result1 = db.get_collection(cpykey).distinct("Exception Name", {"Audit_ID": audit_1id,"jsonFor":"allExceptions"})
+    result2 = db.get_collection(cpykey).distinct("Exception Name", {"Audit_ID": audit_2id,"jsonFor":"allExceptions"})
     print(result1)
     print(result2)
     all_data = [{"name": "Unique Exceptions", audit_1id: len(result1), audit_2id: len(result2)}]
@@ -423,6 +388,315 @@ def np():
 
         return response, 200
 
+
+def get_json_ce(cpykey, audit_1id, audit_2id):
+    db = db_connect()  # db connect
+    list1 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                                  "Severity": "Critical"})
+    list2 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                                  "Severity": "Critical"})
+
+    final_data = []
+    final_data2 = []
+
+    for e in list1:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                  "Severity": "Critical", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data.append({"exception": e, "list": devices})
+    for e in list2:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                  "Severity": "Critical", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data2.append({"exception": e, "list": devices})
+    return {"audit_1": final_data, "audit_2": final_data2}
+
+
+@app.route("/api/audit/table/ce", methods=["GET"])
+def ce():
+    if request.method == "GET":
+        cpykey = request.args.get("cpykey")
+        audit_1id = request.args.get("audit_1_id")
+        audit_2id = request.args.get("audit_2_id")
+        db = db_connect()
+        r = db.get_collection(cpykey)
+        if r is None:
+            return {"error": "CpyKey is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_1id})
+
+        if count is None:
+            return {"error": "Audit-1 is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_2id})
+
+        if count is None:
+            return {"error": "Audit-2 is needed"}, 400
+        result = get_json_ce(cpykey, audit_1id, audit_2id)
+        return {"result":result}, 200
+
+
+def get_json_he(cpykey, audit_1id, audit_2id):
+    db = db_connect()  # db connect
+    list1 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                                  "Severity": "High"})
+    list2 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                                  "Severity": "High"})
+
+    final_data = []
+    final_data2 = []
+
+    for e in list1:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                  "Severity": "High", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data.append({"exception": e, "list": devices})
+    for e in list2:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                  "Severity": "High", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data2.append({"exception": e, "list": devices})
+    return {"audit_1": final_data, "audit_2": final_data2}
+
+
+@app.route("/api/audit/table/he", methods=["GET"])
+def he():
+    if request.method == "GET":
+        cpykey = request.args.get("cpykey")
+        audit_1id = request.args.get("audit_1_id")
+        audit_2id = request.args.get("audit_2_id")
+        db = db_connect()
+        r = db.get_collection(cpykey)
+        if r is None:
+            return {"error": "CpyKey is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_1id})
+
+        if count is None:
+            return {"error": "Audit-1 is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_2id})
+
+        if count is None:
+            return {"error": "Audit-2 is needed"}, 400
+        result = get_json_he(cpykey, audit_1id, audit_2id)
+        return {"result":result}, 200
+
+
+def get_json_me(cpykey, audit_1id, audit_2id):
+    db = db_connect()  # db connect
+    list1 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                                  "Severity": "Medium"})
+    list2 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                                  "Severity": "Medium"})
+
+    final_data = []
+    final_data2 = []
+
+    for e in list1:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                  "Severity": "Medium", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data.append({"exception": e, "list": devices})
+    for e in list2:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                  "Severity": "Medium", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data2.append({"exception": e, "list": devices})
+    return {"audit_1": final_data, "audit_2": final_data2}
+
+
+@app.route("/api/audit/table/me", methods=["GET"])
+def me():
+    if request.method == "GET":
+        cpykey = request.args.get("cpykey")
+        audit_1id = request.args.get("audit_1_id")
+        audit_2id = request.args.get("audit_2_id")
+        db = db_connect()
+        r = db.get_collection(cpykey)
+        if r is None:
+            return {"error": "CpyKey is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_1id})
+
+        if count is None:
+            return {"error": "Audit-1 is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_2id})
+
+        if count is None:
+            return {"error": "Audit-2 is needed"}, 400
+        result = get_json_me(cpykey, audit_1id, audit_2id)
+        return {"result":result}, 200
+
+
+def get_json_le(cpykey, audit_1id, audit_2id):
+    db = db_connect()  # db connect
+    list1 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                                  "Severity": "Low"})
+    list2 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                                  "Severity": "Low"})
+
+    final_data = []
+    final_data2 = []
+
+    for e in list1:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                  "Severity": "Low", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data.append({"exception": e, "list": devices})
+    for e in list2:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                  "Severity": "Low", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data2.append({"exception": e, "list": devices})
+    return {"audit_1": final_data, "audit_2": final_data2}
+
+
+@app.route("/api/audit/table/le", methods=["GET"])
+def le():
+    if request.method == "GET":
+        cpykey = request.args.get("cpykey")
+        audit_1id = request.args.get("audit_1_id")
+        audit_2id = request.args.get("audit_2_id")
+        db = db_connect()
+        r = db.get_collection(cpykey)
+        if r is None:
+            return {"error": "CpyKey is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_1id})
+
+        if count is None:
+            return {"error": "Audit-1 is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_2id})
+
+        if count is None:
+            return {"error": "Audit-2 is needed"}, 400
+        result = get_json_le(cpykey, audit_1id, audit_2id)
+        return {"result":result}, 200
+
+
+def get_json_ie(cpykey, audit_1id, audit_2id):
+    db = db_connect()  # db connect
+    list1 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                                  "Severity": "Informational"})
+    list2 = db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                                  "Severity": "Informational"})
+
+    final_data = []
+    final_data2 = []
+
+    for e in list1:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_1id,
+                                                  "Severity": "Informational", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data.append({"exception": e, "list": devices})
+    for e in list2:
+        devices = []
+        dev = db.get_collection(cpykey).distinct("Host Name (IP Address)",
+                                                 {"jsonFor": "allExceptions", "Audit_ID": audit_2id,
+                                                  "Severity": "Informational", "Exception Name": e})
+        for d in dev:
+            devices.append(d.split(" ")[0])
+
+        final_data2.append({"exception": e, "list": devices})
+    return {"audit_1": final_data, "audit_2": final_data2}
+
+
+@app.route("/api/audit/table/ie", methods=["GET"])
+def ie():
+    if request.method == "GET":
+        cpykey = request.args.get("cpykey")
+        audit_1id = request.args.get("audit_1_id")
+        audit_2id = request.args.get("audit_2_id")
+
+        db = db_connect()
+        r = db.get_collection(cpykey)
+        if r is None:
+            return {"error": "CpyKey is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_1id})
+
+        if count is None:
+            return {"error": "Audit-1 is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_2id})
+
+        if count is None:
+            return {"error": "Audit-2 is needed"}, 400
+
+        result = get_json_ie(cpykey, audit_1id, audit_2id)
+        return {"result":result} , 200
+
+
+def get_json_unique_exceptions_list(cpykey, audit_1id, audit_2id):
+    db = db_connect()
+    list1= db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_1id})
+    list2= db.get_collection(cpykey).distinct("Exception Name", {"jsonFor": "allExceptions", "Audit_ID": audit_2id})
+    return {"audit_1": list1, "audit_2": list2}
+
+
+@app.route("/api/test/uel", methods=["GET"])
+def uel():
+    if request.method == "GET":
+        cpykey = request.args.get("cpykey")
+        audit_1id = request.args.get("audit_1_id")
+        audit_2id = request.args.get("audit_2_id")
+
+        db = db_connect()
+        r = db.get_collection(cpykey)
+        if r is None:
+            return {"error": "CpyKey is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_1id})
+
+        if count is None:
+            return {"error": "Audit-1 is needed"}, 400
+
+        count = db.get_collection(cpykey).find_one({"Audit_ID": audit_2id})
+
+        if count is None:
+            return {"error": "Audit-2 is needed"}, 400
+
+        result = get_json_unique_exceptions_list(cpykey, audit_1id, audit_2id)
+        return {"result":result} , 200
 
 if __name__ == "__main__":
     app.run(debug=True)
